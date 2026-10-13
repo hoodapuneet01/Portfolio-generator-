@@ -171,7 +171,7 @@ export default function App() {
 
   const set = (patch) => setData((d) => ({ ...d, ...patch }));
   const errors = validate(data);
-  const theme = themes[data.theme] || themes.resume;
+  const theme = themes[data.theme] || themes.resume || Object.values(themes)[0];
 
   const inlineHtml = theme.html(data).replace(
     '<link rel="stylesheet" href="style.css">', `<style>${theme.css}</style>`);
