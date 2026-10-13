@@ -3,19 +3,19 @@ import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import { themes } from "./themes.js";
 
-// Step 2: data model
 const initialData = {
   name: "", title: "", bio: "",
+  address: "", phone: "", dob: "", languages: "",
+  education: [{ degree: "", institution: "", year: "" }],
   skills: [],
   projects: [{ title: "", description: "", link: "" }],
   socials: { github: "", linkedin: "", email: "" },
-  theme: "minimal",
+  theme: "resume",
   photo: "",
 };
 
 const isUrl = (u) => !u || /^https?:\/\/\S+\.\S+/i.test(u);
 
-// Step 9: validation
 function validate(d) {
   const e = [];
   if (!d.name.trim()) e.push("Name is required.");
@@ -34,14 +34,65 @@ function Field({ label, ...props }) {
   );
 }
 
-// Step 3: form components
 function PersonalForm({ data, set }) {
   return (
     <fieldset>
       <legend>About you</legend>
       <Field label="Name" value={data.name} onChange={(e) => set({ name: e.target.value })} />
       <Field label="Title" value={data.title} onChange={(e) => set({ title: e.target.value })} />
-      <Field label="Bio" rows={3} value={data.bio} onChange={(e) => set({ bio: e.target.value })} />
+      <Field label="Career objective / bio" rows={4} value={data.bio} onChange={(e) => set({ bio: e.target.value })} />
+      <Field label="Address" value={data.address} onChange={(e) => set({ address: e.target.value })} />
+      <Field label="Telephone" value={data.phone} onChange={(e) => set({ phone: e.target.value })} />
+      <Field label="Date of birth" value={data.dob} placeholder="e.g. 28 June 2003" onChange={(e) => set({ dob: e.target.value })} />
+      <Field label="Languages" value={data.languages} placeholder="e.g. English, Hindi" onChange={(e) => set({ languages: e.target.value })} />
+    </fieldset>
+  );
+}
+
+function PhotoForm({ data, set }) {
+  const onFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = 350; c.height = 450;
+      const r = Math.max(350 / img.width, 450 / img.height);
+      const w = img.width * r, h = img.height * r;
+      c.getContext("2d").drawImage(img, (350 - w) / 2, (450 - h) / 2, w, h);
+      set({ photo: c.toDataURL("image/jpeg", 0.85) });
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  };
+  return (
+    <fieldset>
+      <legend>Photo (passport size)</legend>
+      <input type="file" accept="image/*" onChange={onFile} />
+      {data.photo && <button type="button" className="ghost" onClick={() => set({ photo: "" })}>Remove photo</button>}
+    </fieldset>
+  );
+}
+
+function EducationForm({ data, set }) {
+  const update = (i, patch) =>
+    set({ education: data.education.map((x, idx) => (idx === i ? { ...x, ...patch } : x)) });
+  return (
+    <fieldset>
+      <legend>Education</legend>
+      {data.education.map((x, i) => (
+        <div className="project" key={i}>
+          <Field label="Degree / course" value={x.degree} onChange={(e) => update(i, { degree: e.target.value })} />
+          <Field label="Institution" value={x.institution} onChange={(e) => update(i, { institution: e.target.value })} />
+          <Field label="Year" value={x.year} placeholder="e.g. 2023 - 2026" onChange={(e) => update(i, { year: e.target.value })} />
+          <button type="button" className="ghost"
+            onClick={() => set({ education: data.education.filter((_, idx) => idx !== i) })}>Remove</button>
+        </div>
+      ))}
+      <button type="button"
+        onClick={() => set({ education: [...data.education, { degree: "", institution: "", year: "" }] })}>
+        Add education
+      </button>
     </fieldset>
   );
 }
@@ -105,33 +156,7 @@ function SocialsForm({ data, set }) {
   );
 }
 
-function PhotoForm({ data, set }) {
-  const onFile = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = 350; c.height = 450;
-      const r = Math.max(350 / img.width, 450 / img.height);
-      const w = img.width * r, h = img.height * r;
-      c.getContext("2d").drawImage(img, (350 - w) / 2, (450 - h) / 2, w, h);
-      set({ photo: c.toDataURL("image/jpeg", 0.85) });
-      URL.revokeObjectURL(img.src);
-    };
-    img.src = URL.createObjectURL(file);
-  };
-  return (
-    <fieldset>
-      <legend>Photo</legend>
-      <input type="file" accept="image/*" onChange={onFile} />
-      {data.photo && <button type="button" className="ghost" onClick={() => set({ photo: "" })}>Remove photo</button>}
-    </fieldset>
-  );
-}
-
 export default function App() {
-  // Step 8: save progress
   const [data, setData] = useState(() => {
     try {
       const saved = localStorage.getItem("portfolio");
@@ -146,9 +171,11 @@ export default function App() {
 
   const set = (patch) => setData((d) => ({ ...d, ...patch }));
   const errors = validate(data);
-  const theme = themes[data.theme];
+  const theme = themes[data.theme] || themes.resume;
 
-  // Step 7: export to ZIP
+  const inlineHtml = theme.html(data).replace(
+    '<link rel="stylesheet" href="style.css">', `<style>${theme.css}</style>`);
+
   async function exportSite() {
     setBusy(true);
     try {
@@ -157,18 +184,6 @@ export default function App() {
       saveAs(await zip.generateAsync({ type: "blob" }), "portfolio.zip");
     } finally { setBusy(false); }
   }
-
-  const reset = () => {
-    if (confirm("Clear everything and start over?")) {
-      localStorage.removeItem("portfolio");
-      setData(initialData);
-    }
-  };
-
-  // Step 5: live preview (the template escapes all user input)
-  const inlineHtml = theme.html(data).replace(
-    '<link rel="stylesheet" href="style.css">', `<style>${theme.css}</style>`);
-  const srcDoc = inlineHtml;
 
   function downloadPdf() {
     const html = inlineHtml.replace("</body>",
@@ -179,11 +194,17 @@ export default function App() {
     w.document.close();
   }
 
+  const reset = () => {
+    if (confirm("Clear everything and start over?")) {
+      localStorage.removeItem("portfolio");
+      setData(initialData);
+    }
+  };
+
   return (
     <div className="layout">
       <aside className="editor">
         <h1>Portfolio Generator</h1>
-        {/* Step 6: theme switcher */}
         <label className="field">
           <span>Theme</span>
           <select value={data.theme} onChange={(e) => set({ theme: e.target.value })}>
@@ -192,6 +213,7 @@ export default function App() {
         </label>
         <PersonalForm data={data} set={set} />
         <PhotoForm data={data} set={set} />
+        <EducationForm data={data} set={set} />
         <SkillsForm data={data} set={set} />
         <ProjectsForm data={data} set={set} />
         <SocialsForm data={data} set={set} />
@@ -204,7 +226,7 @@ export default function App() {
           <button className="ghost" onClick={reset}>Reset</button>
         </div>
       </aside>
-      <iframe className="preview" title="Portfolio preview" srcDoc={srcDoc} sandbox="" />
+      <iframe className="preview" title="Portfolio preview" srcDoc={inlineHtml} sandbox="" />
     </div>
   );
 }
