@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import JSZip from "jszip";
-import { saveAs } from "file-saver";
 import { themes } from "./themes.js";
 
 const initialData = {
@@ -176,14 +174,7 @@ export default function App() {
   const inlineHtml = theme.html(data).replace(
     '<link rel="stylesheet" href="style.css">', `<style>${theme.css}</style>`);
 
-  async function exportSite() {
-    setBusy(true);
-    try {
-      const zip = new JSZip();
-      zip.file("index.html", inlineHtml);
-      saveAs(await zip.generateAsync({ type: "blob" }), "portfolio.zip");
-    } finally { setBusy(false); }
-  }
+  
 
   function downloadPdf() {
     const f = document.createElement("iframe");
@@ -224,9 +215,7 @@ export default function App() {
         <SocialsForm data={data} set={set} />
         {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <div className="actions">
-          <button className="primary" disabled={errors.length > 0 || busy} onClick={exportSite}>
-            {busy ? "Preparing…" : "Download ZIP"}
-          </button>
+
           <button disabled={errors.length > 0} onClick={downloadPdf}>Download PDF</button>
           <button className="ghost" onClick={reset}>Reset</button>
         </div>
