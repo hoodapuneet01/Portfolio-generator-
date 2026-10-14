@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import html2pdf from "html2pdf.js";
+import { Capacitor } from "@capacitor/core";
+import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import { themes } from "./themes.js";
 
 const initialData = {
@@ -21,6 +25,11 @@ function validate(d) {
   if (!isUrl(d.socials.linkedin)) e.push("LinkedIn must be a full URL (https://…).");
   d.projects.forEach((p, i) => { if (!isUrl(p.link)) e.push(`Project ${i + 1} link must be a full URL.`); });
   return e;
+}
+
+async function saveNative(base64, filename) {
+  const r = await Filesystem.writeFile({ path: filename, data: base64, directory: Directory.Cache });
+  await Share.share({ title: filename, url: r.uri });
 }
 
 function Field({ label, ...props }) {
@@ -174,20 +183,38 @@ export default function App() {
   const inlineHtml = theme.html(data).replace(
     '<link rel="stylesheet" href="style.css">', `<style>${theme.css}</style>`);
 
-  
-
-  function downloadPdf() {
+  async function downloadPdf() {
+    setBusy(true);
     const f = document.createElement("iframe");
-    f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
-    f.srcdoc = inlineHtml;
-    f.onload = () => {
-      setTimeout(() => {
-        f.contentWindow.focus();
-        f.contentWindow.print();
-        setTimeout(() => f.remove(), 60000);
-      }, 300);
-    };
+    f.style.cssText = "position:fixed;left:0;top:0;width:794px;height:1123px;border:0;opacity:0;pointer-events:none;z-index:-1";
     document.body.appendChild(f);
+    try {
+      await new Promise((res) => { f.onload = res; f.srcdoc = inlineHtml; });
+      await new Promise((r) => setTimeout(r, 600));
+      const filename = (data.name || "resume").replace(/[^\w-]+/g, "_") + ".pdf";
+      const worker = html2pdf().set({
+        margin: 0,
+        filename,
+        image: { type: "jpeg", quality: 0.92 },
+        html2canvas: { scale: 1.5, useCORS: true, windowWidth: 794 },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy"] },
+      }).from(f.contentDocument.body);
+      if (Capacitor.isNativePlatform()) {
+        const uri = await Promise.race([
+          worker.outputPdf("datauristring"),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("PDF took too long")), 30000)),
+        ]);
+        await saveNative(uri.split(",").pop(), filename);
+      } else {
+        await worker.save();
+      }
+    } catch (e) {
+      alert("PDF error: " + (e && e.message ? e.message : e));
+    } finally {
+      f.remove();
+      setBusy(false);
+    }
   }
 
   const reset = () => {
@@ -215,8 +242,9 @@ export default function App() {
         <SocialsForm data={data} set={set} />
         {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <div className="actions">
-
-          <button disabled={errors.length > 0} onClick={downloadPdf}>Download PDF</button>
+          <button className="primary" disabled={errors.length > 0 || busy} onClick={downloadPdf}>
+            {busy ? "Preparing…" : "Download PDF"}
+          </button>
           <button className="ghost" onClick={reset}>Reset</button>
         </div>
       </aside>
